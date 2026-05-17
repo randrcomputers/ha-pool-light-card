@@ -4,7 +4,10 @@ Lovelace card for any **RGB `light`** entity — fixture artwork, color presets,
 
 Works with **[iPool Light](https://github.com/randrcomputers/ha-ipool-light)** and other RGB pool lights.
 
-![Pool light card preview](media/preview.png)
+<img width="495" height="397" alt="image" src="https://github.com/user-attachments/assets/68a86268-e7c0-4522-8a7a-e4a32b8222b1" />
+<img width="485" height="400" alt="image" src="https://github.com/user-attachments/assets/38ca4b16-c265-48dd-be1e-7915d3086e20" />
+
+
 
 ## Install
 
