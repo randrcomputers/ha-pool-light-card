@@ -1,0 +1,1 @@
+# ha-pool-light-card
