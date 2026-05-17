@@ -7,6 +7,8 @@
 
   const DEFAULTS = Object.freeze({
     image: "/local/pool_card/pool_light_fixture.png",
+    image_control_box: "/local/pool_card/light_control_box.png",
+    show_fixture_when: "auto",
     glow_top: 22,
     glow_left: 22,
     glow_size: 56,
@@ -31,7 +33,31 @@
   }
 
   function mergeConfig(config) {
-    return { ...DEFAULTS, ...config };
+    return {
+      ...DEFAULTS,
+      show_fixture_when: "auto",
+      ...config,
+    };
+  }
+
+  function showFixtureView(config, light) {
+    const mode = config.show_fixture_when || "auto";
+    if (mode === "always") return true;
+    if (mode === "never") return false;
+    return light.isOn;
+  }
+
+  function resolveArtwork(config, light) {
+    const ctrl = (config.image_control_box || "").trim();
+    const fixture = showFixtureView(config, light);
+    if (!fixture && ctrl) {
+      return { src: ctrl, showGlow: false, view: "control-box" };
+    }
+    return {
+      src: config.image || DEFAULTS.image,
+      showGlow: true,
+      view: "fixture",
+    };
   }
 
   function glowStyle(config, rgb, brightness, isOn) {
@@ -197,12 +223,18 @@
         "Pool light";
       const ble = bleConnected(this.hass, cfg);
       const [r, g, b] = light.rgb;
-      const glowCss = glowStyle(cfg, light.rgb, light.brightness, light.isOn);
+      const art = resolveArtwork(cfg, light);
+      const glowCss = glowStyle(
+        cfg,
+        light.rgb,
+        light.brightness,
+        light.isOn && art.showGlow
+      );
 
       return html`
         <ha-card>
           <div
-            class="card ${light.isOn ? "on" : "off"} ${light.ok ? "" : "unavailable"}"
+            class="card ${light.isOn ? "on" : "off"} ${light.ok ? "" : "unavailable"} view-${art.view}"
           >
             <div class="header">
               <span class="title">${title}</span>
@@ -215,14 +247,19 @@
             </div>
 
             <div class="stage">
-              <div class="fixture-wrap" style="${glowCss}">
+              <div
+                class="fixture-wrap ${art.showGlow ? "has-glow" : "no-glow"}"
+                style="${art.showGlow ? glowCss : ""}"
+              >
                 <img
                   class="fixture-img"
-                  src="${cfg.image}"
+                  src="${art.src}"
                   alt=""
                   draggable="false"
                 />
-                <div class="lens-glow" aria-hidden="true"></div>
+                ${art.showGlow
+                  ? html`<div class="lens-glow" aria-hidden="true"></div>`
+                  : ""}
               </div>
             </div>
 
@@ -383,6 +420,13 @@
           width: 100%;
           max-width: 220px;
           line-height: 0;
+        }
+        .view-control-box .fixture-wrap {
+          max-width: 200px;
+        }
+        .view-control-box .fixture-img {
+          max-height: 200px;
+          object-fit: contain;
         }
         .fixture-img {
           width: 100%;
@@ -585,6 +629,16 @@
             },
             { name: "name", selector: { text: {} } },
             { name: "image", selector: { text: {} } },
+            { name: "image_control_box", selector: { text: {} } },
+            {
+              name: "show_fixture_when",
+              type: "select",
+              options: [
+                ["auto", "Auto (fixture on, control box off)"],
+                ["always", "Always show fixture"],
+                ["never", "Always show control box"],
+              ],
+            },
             {
               name: "glow_top",
               selector: {
@@ -609,7 +663,9 @@
               entity: "Light entity",
               entity_connected: "Connected (optional BLE sensor)",
               name: "Card title override",
-              image: "Fixture image URL",
+              image: "Fixture image URL (light on)",
+              image_control_box: "Control box image URL (light off)",
+              show_fixture_when: "Fixture vs control box",
               glow_top: "Lens glow — top %",
               glow_left: "Lens glow — left %",
               glow_size: "Lens glow — size %",

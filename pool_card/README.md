@@ -2,11 +2,12 @@ Copy the images you want into **`config/www/pool_card/`** on Home Assistant (SSH
 
 ## Recommended for the Pool Light Card
 
-| Copy this file | Example URL in the card editor |
-| --- | --- |
-| **`pool_light_fixture.png`** | `/local/pool_card/pool_light_fixture.png` |
+| Copy this file | Example URL | Shown when |
+| --- | --- | --- |
+| **`pool_light_fixture.png`** | `/local/pool_card/pool_light_fixture.png` | Light **on** (default **Auto**) |
+| **`light_control_box.png`** | `/local/pool_card/light_control_box.png` | Light **off** |
 
-AI render on a dark background — works well on Lovelace cards. This is the best default for the fixture image.
+Set **Fixture vs control box** to **Auto** in the card editor (default).
 
 ## Your photos (optional)
 

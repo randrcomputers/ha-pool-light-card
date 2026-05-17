@@ -1,3 +1,5 @@
 type: custom:pool-light-card
 entity: light.YOUR_LIGHT_ENTITY
 image: /local/pool_card/pool_light_fixture.png
+image_control_box: /local/pool_card/light_control_box.png
+show_fixture_when: auto
