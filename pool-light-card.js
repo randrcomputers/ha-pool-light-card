@@ -12,6 +12,7 @@
     glow_top: 22,
     glow_left: 22,
     glow_size: 56,
+    glow_brightness: 140,
   });
 
   const PRESETS = Object.freeze([
@@ -60,19 +61,31 @@
     };
   }
 
+  function glowStrengthMul(config) {
+    const b = num(config, "glow_brightness", DEFAULTS.glow_brightness);
+    return Math.min(2.5, Math.max(0.25, b / 100));
+  }
+
   function glowStyle(config, rgb, brightness, isOn) {
     const [r, g, b] = rgb;
     const top = num(config, "glow_top", DEFAULTS.glow_top);
     const left = num(config, "glow_left", DEFAULTS.glow_left);
     const size = num(config, "glow_size", DEFAULTS.glow_size);
-    const dim = isOn ? Math.max(0.12, (brightness || 255) / 255) : 0;
-    const bg = `radial-gradient(circle at 45% 40%, rgba(${r},${g},${b},0.95) 0%, rgba(${r},${g},${b},0.55) 38%, rgba(${r},${g},${b},0.12) 62%, transparent 72%)`;
+    const strength = glowStrengthMul(config);
+    const lightDim = isOn ? (brightness || 255) / 255 : 0;
+    const dim = isOn ? Math.min(1, Math.max(0.2, lightDim * strength)) : 0;
+    const a0 = Math.min(1, 0.95 * strength).toFixed(2);
+    const a1 = Math.min(1, 0.6 * strength).toFixed(2);
+    const a2 = Math.min(1, 0.22 * strength).toFixed(2);
+    const bg = `radial-gradient(circle at 45% 40%, rgba(${r},${g},${b},${a0}) 0%, rgba(${r},${g},${b},${a1}) 38%, rgba(${r},${g},${b},${a2}) 62%, transparent 72%)`;
     return `
       --pl-glow-top:${top}%;
       --pl-glow-left:${left}%;
       --pl-glow-size:${size}%;
       --pl-glow-bg:${bg};
       --pl-dim:${dim.toFixed(3)};
+      --pl-glow-filter:brightness(${strength.toFixed(2)});
+      --pl-glow-shadow:0 0 36px rgba(${r},${g},${b},${Math.min(1, 0.7 * strength).toFixed(2)});
     `.trim();
   }
 
@@ -445,11 +458,16 @@
           opacity: var(--pl-dim, 0);
           background: var(--pl-glow-bg);
           mix-blend-mode: screen;
-          filter: blur(1px);
-          transition: opacity 0.35s ease;
+          filter: blur(1px) brightness(var(--pl-glow-filter, 1));
+          transition:
+            opacity 0.35s ease,
+            filter 0.35s ease;
         }
         .card.on .lens-glow {
           animation: glow-breathe 3s ease-in-out infinite;
+        }
+        .fixture-wrap.has-glow .lens-glow {
+          box-shadow: var(--pl-glow-shadow, none);
         }
         .brightness-row {
           display: flex;
@@ -657,6 +675,12 @@
                 number: { mode: "box", min: 10, max: 100, step: 0.5 },
               },
             },
+            {
+              name: "glow_brightness",
+              selector: {
+                number: { mode: "box", min: 25, max: 250, step: 5 },
+              },
+            },
           ]}
           .computeLabel=${(s) =>
             ({
@@ -669,6 +693,7 @@
               glow_top: "Lens glow — top %",
               glow_left: "Lens glow — left %",
               glow_size: "Lens glow — size %",
+              glow_brightness: "Lens glow — brightness %",
             })[s.name] || s.name}
           @value-changed=${this._valueChanged}
         ></ha-form>

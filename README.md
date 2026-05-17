@@ -24,7 +24,7 @@ Copy files from the repo folder **`pool_card/`** into **`config/www/pool_card/`*
 
 See **`pool_card/README.md`** for all bundled images.
 
-If the colored glow does not line up with your lens, adjust **Lens glow — top / left / size %** in the card editor.
+If the colored glow does not line up with your lens, adjust **Lens glow — top / left / size %** in the card editor. If the color is hard to see when the light is on, raise **Lens glow — brightness %** (default **140**; try up to **200**).
 
 ## Add the card
 
