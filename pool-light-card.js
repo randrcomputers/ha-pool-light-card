@@ -6,7 +6,7 @@
   const { html, css } = LitElement.prototype;
 
   const DEFAULTS = Object.freeze({
-    image: "/local/pool_card/pool_light.png",
+    image: "/local/pool_card/pool_light_fixture.png",
     glow_top: 22,
     glow_left: 22,
     glow_size: 56,

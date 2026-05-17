@@ -12,13 +12,17 @@ Works with **[iPool Light](https://github.com/randrcomputers/ha-ipool-light)** a
 2. **Frontend** → **Pool Light Card** → **Download**
 3. **Settings** → **Dashboards** → **⋮** → **Reload resources**, then refresh the browser (**Ctrl+F5**)
 
-## Fixture image
+## Pictures on Home Assistant
 
-Copy **`pool_card/pool_light.png`** → **`config/www/pool_card/pool_light.png`** on Home Assistant.
+Copy files from the repo folder **`pool_card/`** into **`config/www/pool_card/`** on your HA host.
 
-| Setting | Example |
+| File to copy | Example URL |
 | --- | --- |
-| Fixture image URL | `/local/pool_card/pool_light.png` |
+| **`pool_light_fixture.png`** (recommended) | `/local/pool_card/pool_light_fixture.png` |
+| **`ipool_light.png`** (your product photo) | `/local/pool_card/ipool_light.png` |
+| **`light_control_box.png`** (controller photo) | `/local/pool_card/light_control_box.png` |
+
+See **`pool_card/README.md`** for all bundled images.
 
 If the colored glow does not line up with your lens, adjust **Lens glow — top / left / size %** in the card editor.
 
@@ -29,10 +33,10 @@ Pick your **Light** entity in the UI, or YAML:
 ```yaml
 type: custom:pool-light-card
 entity: light.ipool_light
-image: /local/pool_card/pool_light.png
+image: /local/pool_card/pool_light_fixture.png
 ```
 
-Optional **Connected** binary sensor lights the BLE badge when `on` (otherwise the badge follows whether the light entity is available).
+Optional **Connected** binary sensor lights the BLE badge when `on`.
 
 ---
 
