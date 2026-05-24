@@ -15,6 +15,53 @@
     glow_brightness: 140,
   });
 
+  /** Must match ``ipool_light`` service ``effect`` names (APK ``rgb_mode`` 128–156). */
+  const EFFECT_OPTIONS = Object.freeze([
+    { group: "Jump", items: ["Tricolor jump", "Seven-color jump"] },
+    {
+      group: "Gradient",
+      items: [
+        "Seven-color gradient",
+        "Tricolor gradient",
+        "Red gradient",
+        "Green gradient",
+        "Blue gradient",
+        "Yellow gradient",
+        "Cyan gradient",
+        "Purple gradient",
+        "White gradient",
+        "Red-Green gradient",
+        "Red-Blue gradient",
+        "Green-Blue gradient",
+      ],
+    },
+    {
+      group: "Flash",
+      items: [
+        "Seven-color flash",
+        "Red flash",
+        "Green flash",
+        "Blue flash",
+        "Yellow flash",
+        "Cyan flash",
+        "Purple flash",
+        "White flash",
+      ],
+    },
+    {
+      group: "Static (effect mode)",
+      items: [
+        "Static white",
+        "Static red",
+        "Static blue",
+        "Static green",
+        "Static cyan",
+        "Static yellow",
+        "Static purple",
+      ],
+    },
+  ]);
+
   const PRESETS = Object.freeze([
     { name: "Orange", rgb: [255, 120, 40] },
     { name: "Peach", rgb: [255, 190, 140] },
@@ -37,6 +84,8 @@
     return {
       ...DEFAULTS,
       show_fixture_when: "auto",
+      show_effects: true,
+      show_effect_preview: true,
       ...config,
     };
   }
@@ -66,6 +115,14 @@
     return Math.min(2.5, Math.max(0.25, b / 100));
   }
 
+  function glowRadial(rgb, strength) {
+    const [r, g, b] = rgb;
+    const a0 = Math.min(1, 0.95 * strength).toFixed(2);
+    const a1 = Math.min(1, 0.6 * strength).toFixed(2);
+    const a2 = Math.min(1, 0.22 * strength).toFixed(2);
+    return `radial-gradient(circle at 45% 40%, rgba(${r},${g},${b},${a0}) 0%, rgba(${r},${g},${b},${a1}) 38%, rgba(${r},${g},${b},${a2}) 62%, transparent 72%)`;
+  }
+
   function glowStyle(config, rgb, brightness, isOn) {
     const [r, g, b] = rgb;
     const top = num(config, "glow_top", DEFAULTS.glow_top);
@@ -74,19 +131,71 @@
     const strength = glowStrengthMul(config);
     const lightDim = isOn ? (brightness || 255) / 255 : 0;
     const dim = isOn ? Math.min(1, Math.max(0.2, lightDim * strength)) : 0;
-    const a0 = Math.min(1, 0.95 * strength).toFixed(2);
-    const a1 = Math.min(1, 0.6 * strength).toFixed(2);
-    const a2 = Math.min(1, 0.22 * strength).toFixed(2);
-    const bg = `radial-gradient(circle at 45% 40%, rgba(${r},${g},${b},${a0}) 0%, rgba(${r},${g},${b},${a1}) 38%, rgba(${r},${g},${b},${a2}) 62%, transparent 72%)`;
     return `
       --pl-glow-top:${top}%;
       --pl-glow-left:${left}%;
       --pl-glow-size:${size}%;
-      --pl-glow-bg:${bg};
+      --pl-glow-bg:${glowRadial(rgb, strength)};
       --pl-dim:${dim.toFixed(3)};
       --pl-glow-filter:brightness(${strength.toFixed(2)});
       --pl-glow-shadow:0 0 36px rgba(${r},${g},${b},${Math.min(1, 0.7 * strength).toFixed(2)});
     `.trim();
+  }
+
+  /** Card-only preview — HA does not report live effect mode from the lamp. */
+  function effectPreview(effectName) {
+    const n = effectName.toLowerCase();
+    if (n.startsWith("static")) {
+      const map = {
+        "static red": [255, 48, 48],
+        "static blue": [48, 120, 255],
+        "static green": [48, 220, 96],
+        "static cyan": [48, 220, 255],
+        "static yellow": [255, 230, 80],
+        "static purple": [180, 96, 255],
+        "static white": [255, 255, 255],
+      };
+      return { fx: "", rgb: map[n] || [255, 255, 255] };
+    }
+    if (n.includes("jump")) {
+      return { fx: n.includes("seven") ? "fx-jump-seven" : "fx-jump-tri", rgb: null };
+    }
+    if (n.includes("flash")) {
+      let rgb = [255, 255, 255];
+      if (n.includes("red")) rgb = [255, 56, 56];
+      else if (n.includes("green")) rgb = [56, 255, 120];
+      else if (n.includes("blue")) rgb = [56, 140, 255];
+      else if (n.includes("yellow")) rgb = [255, 220, 64];
+      else if (n.includes("cyan")) rgb = [64, 220, 255];
+      else if (n.includes("purple")) rgb = [180, 96, 255];
+      return { fx: "fx-flash", rgb };
+    }
+    if (n.includes("gradient")) {
+      let rgb = [255, 255, 255];
+      if (n.includes("red")) rgb = [255, 72, 48];
+      else if (n.includes("green")) rgb = [48, 220, 120];
+      else if (n.includes("blue")) rgb = [48, 140, 255];
+      else if (n.includes("yellow")) rgb = [255, 210, 64];
+      else if (n.includes("cyan")) rgb = [64, 210, 255];
+      else if (n.includes("purple")) rgb = [170, 96, 255];
+      return { fx: "fx-gradient", rgb };
+    }
+    return { fx: "fx-gradient", rgb: [255, 255, 255] };
+  }
+
+  function resolveGlowPreview(cfg, light, selectedEffect) {
+    const on =
+      light.isOn && selectedEffect && cfg.show_effect_preview !== false;
+    if (!on) {
+      return { rgb: light.rgb, fx: "", label: light.label };
+    }
+    const preview = effectPreview(selectedEffect);
+    const rgb = preview.rgb || light.rgb;
+    const short =
+      selectedEffect.length > 22
+        ? `${selectedEffect.slice(0, 20)}…`
+        : selectedEffect;
+    return { rgb, fx: preview.fx, label: short };
   }
 
   function readLight(hass, entityId) {
@@ -141,6 +250,7 @@
         hass: {},
         config: {},
         _busy: { state: false },
+        _selectedEffect: { state: "" },
       };
     }
 
@@ -178,6 +288,30 @@
       }
     }
 
+    async _callIpool(service, data) {
+      const entity_id = this._entityId();
+      if (!entity_id || this._busy) return;
+      this._busy = true;
+      try {
+        await this.hass.callService("ipool_light", service, {
+          entity_id,
+          ...data,
+        });
+      } finally {
+        this._busy = false;
+      }
+    }
+
+    _pickEffect(ev) {
+      const effect = ev.target.value;
+      if (!effect) {
+        this._selectedEffect = "";
+        return;
+      }
+      this._selectedEffect = effect;
+      this._callIpool("set_rgb_effect", { effect, turn_on_first: true });
+    }
+
     _togglePower() {
       this._call("toggle", {});
     }
@@ -196,6 +330,7 @@
     }
 
     _pickColor(rgb) {
+      this._selectedEffect = "";
       const light = readLight(this.hass, this._entityId());
       this._call("turn_on", {
         rgb_color: rgb,
@@ -235,14 +370,16 @@
         this.hass.states[entityId]?.attributes?.friendly_name ||
         "Pool light";
       const ble = bleConnected(this.hass, cfg);
-      const [r, g, b] = light.rgb;
       const art = resolveArtwork(cfg, light);
+      const glowPreview = resolveGlowPreview(cfg, light, this._selectedEffect);
+      const [r, g, b] = glowPreview.rgb;
       const glowCss = glowStyle(
         cfg,
-        light.rgb,
+        glowPreview.rgb,
         light.brightness,
         light.isOn && art.showGlow
       );
+      const stateLabel = glowPreview.label;
 
       return html`
         <ha-card>
@@ -271,7 +408,10 @@
                   draggable="false"
                 />
                 ${art.showGlow
-                  ? html`<div class="lens-glow" aria-hidden="true"></div>`
+                  ? html`<div
+                      class="lens-glow ${glowPreview.fx}"
+                      aria-hidden="true"
+                    ></div>`
                   : ""}
               </div>
             </div>
@@ -287,6 +427,33 @@
                 @change=${this._setBrightness}
               />
             </label>
+
+            ${cfg.show_effects !== false
+              ? html`
+                  <label class="effect-row">
+                    <span class="effect-label">Effect</span>
+                    <select
+                      class="effect-select"
+                      ?disabled=${!light.ok || this._busy}
+                      .value=${this._selectedEffect || ""}
+                      @change=${this._pickEffect}
+                    >
+                      <option value="">Solid color (swatches)</option>
+                      ${EFFECT_OPTIONS.map(
+                        (g) => html`
+                          <optgroup label=${g.group}>
+                            ${g.items.map(
+                              (name) => html`
+                                <option value=${name}>${name}</option>
+                              `
+                            )}
+                          </optgroup>
+                        `
+                      )}
+                    </select>
+                  </label>
+                `
+              : ""}
 
             <div class="swatches" role="group" aria-label="Colors">
               ${PRESETS.map(
@@ -321,7 +488,7 @@
                     ? `background: rgb(${r},${g},${b}); box-shadow: 0 0 10px rgba(${r},${g},${b},0.75)`
                     : ""}
                 ></span>
-                <span class="state-text">${light.label}</span>
+                <span class="state-text">${stateLabel}</span>
               </div>
               <button
                 type="button"
@@ -463,11 +630,46 @@
             opacity 0.35s ease,
             filter 0.35s ease;
         }
-        .card.on .lens-glow {
+        .card.on .lens-glow:not([class*="fx-"]) {
           animation: glow-breathe 3s ease-in-out infinite;
+        }
+        .card.on .lens-glow.fx-jump-tri {
+          animation: fx-jump-tri 1.05s steps(3, end) infinite;
+        }
+        .card.on .lens-glow.fx-jump-seven {
+          animation: fx-jump-seven 1.75s steps(7, end) infinite;
+        }
+        .card.on .lens-glow.fx-gradient {
+          animation: fx-gradient-hue 4.5s linear infinite;
+        }
+        .card.on .lens-glow.fx-flash {
+          animation: fx-flash-pulse 0.32s ease-in-out infinite alternate;
         }
         .fixture-wrap.has-glow .lens-glow {
           box-shadow: var(--pl-glow-shadow, none);
+        }
+        .effect-row {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+        .effect-label {
+          font-size: 0.78rem;
+          color: var(--secondary-text-color);
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
+        .effect-select {
+          width: 100%;
+          padding: 8px 10px;
+          border-radius: 8px;
+          border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.12));
+          background: var(--secondary-background-color);
+          color: var(--primary-text-color);
+          font-size: 0.9rem;
+        }
+        .effect-select:disabled {
+          opacity: 0.45;
         }
         .brightness-row {
           display: flex;
@@ -608,6 +810,115 @@
             filter: blur(2px) brightness(1.08);
           }
         }
+        @keyframes fx-jump-tri {
+          0%,
+          100% {
+            background: radial-gradient(
+              circle at 45% 40%,
+              rgba(255, 48, 48, 0.95) 0%,
+              rgba(255, 48, 48, 0.55) 38%,
+              rgba(255, 48, 48, 0.2) 62%,
+              transparent 72%
+            );
+            box-shadow: 0 0 36px rgba(255, 48, 48, 0.75);
+          }
+          33% {
+            background: radial-gradient(
+              circle at 45% 40%,
+              rgba(48, 220, 96, 0.95) 0%,
+              rgba(48, 220, 96, 0.55) 38%,
+              rgba(48, 220, 96, 0.2) 62%,
+              transparent 72%
+            );
+            box-shadow: 0 0 36px rgba(48, 220, 96, 0.75);
+          }
+          66% {
+            background: radial-gradient(
+              circle at 45% 40%,
+              rgba(48, 140, 255, 0.95) 0%,
+              rgba(48, 140, 255, 0.55) 38%,
+              rgba(48, 140, 255, 0.2) 62%,
+              transparent 72%
+            );
+            box-shadow: 0 0 36px rgba(48, 140, 255, 0.75);
+          }
+        }
+        @keyframes fx-jump-seven {
+          0% {
+            background: radial-gradient(
+              circle at 45% 40%,
+              rgba(255, 48, 48, 0.95) 0%,
+              transparent 72%
+            );
+          }
+          14% {
+            background: radial-gradient(
+              circle at 45% 40%,
+              rgba(255, 140, 0, 0.95) 0%,
+              transparent 72%
+            );
+          }
+          28% {
+            background: radial-gradient(
+              circle at 45% 40%,
+              rgba(255, 230, 64, 0.95) 0%,
+              transparent 72%
+            );
+          }
+          42% {
+            background: radial-gradient(
+              circle at 45% 40%,
+              rgba(48, 220, 96, 0.95) 0%,
+              transparent 72%
+            );
+          }
+          57% {
+            background: radial-gradient(
+              circle at 45% 40%,
+              rgba(64, 210, 255, 0.95) 0%,
+              transparent 72%
+            );
+          }
+          71% {
+            background: radial-gradient(
+              circle at 45% 40%,
+              rgba(120, 72, 255, 0.95) 0%,
+              transparent 72%
+            );
+          }
+          85% {
+            background: radial-gradient(
+              circle at 45% 40%,
+              rgba(255, 96, 200, 0.95) 0%,
+              transparent 72%
+            );
+          }
+          100% {
+            background: radial-gradient(
+              circle at 45% 40%,
+              rgba(255, 48, 48, 0.95) 0%,
+              transparent 72%
+            );
+          }
+        }
+        @keyframes fx-gradient-hue {
+          0% {
+            filter: blur(1px) brightness(1.1) hue-rotate(0deg);
+          }
+          100% {
+            filter: blur(2px) brightness(1.25) hue-rotate(360deg);
+          }
+        }
+        @keyframes fx-flash-pulse {
+          from {
+            opacity: calc(var(--pl-dim, 0.8) * 0.12);
+            filter: blur(0.5px) brightness(0.85);
+          }
+          to {
+            opacity: calc(var(--pl-dim, 0.8) * 1);
+            filter: blur(2px) brightness(1.35);
+          }
+        }
       `;
     }
   }
@@ -658,6 +969,14 @@
               ],
             },
             {
+              name: "show_effects",
+              selector: { boolean: {} },
+            },
+            {
+              name: "show_effect_preview",
+              selector: { boolean: {} },
+            },
+            {
               name: "glow_top",
               selector: {
                 number: { mode: "box", min: 0, max: 100, step: 0.5 },
@@ -690,6 +1009,9 @@
               image: "Fixture image URL (light on)",
               image_control_box: "Control box image URL (light off)",
               show_fixture_when: "Fixture vs control box",
+              show_effects: "Show effect dropdown (ipool_light v0.1.3+)",
+              show_effect_preview:
+                "Animate lens glow when an effect is selected (card preview only)",
               glow_top: "Lens glow — top %",
               glow_left: "Lens glow — left %",
               glow_size: "Lens glow — size %",
@@ -709,7 +1031,7 @@
     type: "pool-light-card",
     name: "Pool Light Card",
     description:
-      "RGB pool light card with fixture artwork, brightness, presets, and BLE badge",
+      "RGB pool light card — colors, APK effects, animated lens preview, BLE badge",
     preview: true,
     documentationURL:
       "https://github.com/randrcomputers/ha-pool-light-card#readme",

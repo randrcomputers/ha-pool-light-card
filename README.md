@@ -2,12 +2,17 @@
 
 Lovelace card for any **RGB `light`** entity — fixture artwork, color presets, brightness slider, power toggle, and a BLE-style connectivity badge (same look as the [Pool Cleaner Card](https://github.com/randrcomputers/ha-pool-cleaner-card)).
 
-Works with **[iPool Light](https://github.com/randrcomputers/ha-ipool-light)** and other RGB pool lights.
+Works with **[iPool Light](https://github.com/randrcomputers/ha-ipool-light)** (**v0.1.3+** for the effect dropdown). Other RGB lights can use colors only.
 
-<img width="495" height="397" alt="image" src="https://github.com/user-attachments/assets/68a86268-e7c0-4522-8a7a-e4a32b8222b1" />
-<img width="485" height="400" alt="image" src="https://github.com/user-attachments/assets/38ca4b16-c265-48dd-be1e-7915d3086e20" />
+### Effect dropdown (iPool / LedBle)
 
+Requires integration **v0.1.3** (`ipool_light.set_rgb_effect` service). The card shows a dropdown (jump, gradient, flash) like the iPool app — **no extra HA entities**, so it does not break the light integration.
 
+The built-in HA **light more-info** dialog (power / brightness / color wheel) does not include effects; use this card on your dashboard for animations.
+
+When you pick an effect, the card can **animate the lens glow** on the fixture image (jump = stepped colors, gradient = hue sweep, flash = pulse). This is a **card-only preview** — Home Assistant does not report the lamp’s live effect mode, so after a page reload you may need to select the effect again to see the animation. Turn off **Animate lens glow when an effect is selected** in the card editor if you prefer a solid glow only.
+
+![Pool light card preview](media/preview.png)
 
 ## Install
 
