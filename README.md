@@ -10,7 +10,9 @@ Requires integration **v0.1.3** (`ipool_light.set_rgb_effect` service). The card
 
 The built-in HA **light more-info** dialog (power / brightness / color wheel) does not include effects; use this card on your dashboard for animations.
 
-When you pick an effect, the card can **animate the lens glow** on the fixture image (jump = stepped colors, gradient = hue sweep, flash = pulse). This is a **card-only preview** — Home Assistant does not report the lamp’s live effect mode, so after a page reload you may need to select the effect again to see the animation. Turn off **Animate lens glow when an effect is selected** in the card editor if you prefer a solid glow only.
+The card can **animate the lens glow** to match the selected effect (seven-color and tricolor use stepped color cycles; single-color gradients use a hue sweep). The integration stores **`ipool_effect`** and **`ipool_effect_speed`** on the light entity so the dropdown and speed slider stay in sync after refresh or power on/off.
+
+Requires integration **v0.1.7+** (`ipool_light.set_rgb_effect`, `ipool_light.set_effect_speed`).
 
 ![Pool light card preview](media/preview.png)
 

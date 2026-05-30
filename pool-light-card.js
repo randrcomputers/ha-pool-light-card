@@ -73,6 +73,101 @@
     { name: "Coral", rgb: [255, 100, 90] },
   ]);
 
+  const STATIC_EFFECT_RGB = Object.freeze({
+    "Static red": [255, 48, 48],
+    "Static blue": [48, 120, 255],
+    "Static green": [48, 220, 96],
+    "Static cyan": [48, 220, 255],
+    "Static yellow": [255, 230, 80],
+    "Static purple": [180, 96, 255],
+    "Static white": [255, 255, 255],
+  });
+
+  /** Card lens preview — matched to APK effect families (not HA state). */
+  const EFFECT_PREVIEW = Object.freeze({
+    "Tricolor jump": { fx: "fx-jump-tri", rgb: null },
+    "Seven-color jump": { fx: "fx-jump-seven", rgb: null },
+    "Tricolor gradient": { fx: "fx-jump-tri", rgb: null },
+    "Seven-color gradient": { fx: "fx-jump-seven", rgb: null },
+    "Red gradient": { fx: "fx-gradient-mono", rgb: [255, 72, 48] },
+    "Green gradient": { fx: "fx-gradient-mono", rgb: [48, 220, 120] },
+    "Blue gradient": { fx: "fx-gradient-mono", rgb: [48, 140, 255] },
+    "Yellow gradient": { fx: "fx-gradient-mono", rgb: [255, 210, 64] },
+    "Cyan gradient": { fx: "fx-gradient-mono", rgb: [64, 210, 255] },
+    "Purple gradient": { fx: "fx-gradient-mono", rgb: [170, 96, 255] },
+    "White gradient": { fx: "fx-gradient-mono", rgb: [240, 240, 255] },
+    "Red-Green gradient": { fx: "fx-gradient-rg", rgb: null },
+    "Red-Blue gradient": { fx: "fx-gradient-rb", rgb: null },
+    "Green-Blue gradient": { fx: "fx-gradient-gb", rgb: null },
+    "Seven-color flash": { fx: "fx-jump-seven", rgb: null, flash: true },
+    "Red flash": { fx: "fx-flash", rgb: [255, 56, 56] },
+    "Green flash": { fx: "fx-flash", rgb: [56, 255, 120] },
+    "Blue flash": { fx: "fx-flash", rgb: [56, 140, 255] },
+    "Yellow flash": { fx: "fx-flash", rgb: [255, 220, 64] },
+    "Cyan flash": { fx: "fx-flash", rgb: [64, 220, 255] },
+    "Purple flash": { fx: "fx-flash", rgb: [180, 96, 255] },
+    "White flash": { fx: "fx-flash", rgb: [255, 255, 255] },
+  });
+
+  const FX_DURATION_BASE_SEC = Object.freeze({
+    "fx-jump-tri": 1.05,
+    "fx-jump-seven": 1.75,
+    "fx-gradient-mono": 2.8,
+    "fx-gradient-rg": 2.4,
+    "fx-gradient-rb": 2.4,
+    "fx-gradient-gb": 2.4,
+    "fx-flash": 0.32,
+  });
+
+  const MONO_GRADIENT_RGB = Object.freeze({
+    red: [255, 72, 48],
+    green: [48, 220, 120],
+    blue: [48, 140, 255],
+    yellow: [255, 210, 64],
+    cyan: [64, 210, 255],
+    purple: [170, 96, 255],
+    white: [240, 240, 255],
+  });
+
+  const ATTR_IPOOL_EFFECT = "ipool_effect";
+  const ATTR_IPOOL_EFFECT_SPEED = "ipool_effect_speed";
+  const DEFAULT_EFFECT_SPEED = 3;
+
+  function effectStorageKey(entityId) {
+    return `pool-light-card:${entityId}:effect`;
+  }
+
+  function readStoredEffect(entityId) {
+    if (!entityId) return "";
+    try {
+      return localStorage.getItem(effectStorageKey(entityId)) || "";
+    } catch {
+      return "";
+    }
+  }
+
+  function writeStoredEffect(entityId, effect) {
+    if (!entityId) return;
+    try {
+      const key = effectStorageKey(entityId);
+      if (effect) localStorage.setItem(key, effect);
+      else localStorage.removeItem(key);
+    } catch {
+      /* private mode / quota */
+    }
+  }
+
+  function resolveEffectName(hass, entityId, stEffect) {
+    if (
+      stEffect &&
+      stEffect !== "unknown" &&
+      stEffect !== "unavailable"
+    ) {
+      return String(stEffect);
+    }
+    return readStoredEffect(entityId);
+  }
+
   function num(config, key, fallback) {
     const v = config[key];
     if (v === undefined || v === null || v === "") return fallback;
@@ -123,7 +218,7 @@
     return `radial-gradient(circle at 45% 40%, rgba(${r},${g},${b},${a0}) 0%, rgba(${r},${g},${b},${a1}) 38%, rgba(${r},${g},${b},${a2}) 62%, transparent 72%)`;
   }
 
-  function glowStyle(config, rgb, brightness, isOn) {
+  function glowStyle(config, rgb, brightness, isOn, fxClass, effectSpeed, flashFast) {
     const [r, g, b] = rgb;
     const top = num(config, "glow_top", DEFAULTS.glow_top);
     const left = num(config, "glow_left", DEFAULTS.glow_left);
@@ -131,6 +226,10 @@
     const strength = glowStrengthMul(config);
     const lightDim = isOn ? (brightness || 255) / 255 : 0;
     const dim = isOn ? Math.min(1, Math.max(0.2, lightDim * strength)) : 0;
+    const sp = Math.max(1, Math.min(10, Number(effectSpeed) || DEFAULT_EFFECT_SPEED));
+    const base = FX_DURATION_BASE_SEC[fxClass] || 3;
+    const flashMul = flashFast ? 0.55 : 1;
+    const dur = ((base * flashMul * DEFAULT_EFFECT_SPEED) / sp).toFixed(2);
     return `
       --pl-glow-top:${top}%;
       --pl-glow-left:${left}%;
@@ -139,63 +238,99 @@
       --pl-dim:${dim.toFixed(3)};
       --pl-glow-filter:brightness(${strength.toFixed(2)});
       --pl-glow-shadow:0 0 36px rgba(${r},${g},${b},${Math.min(1, 0.7 * strength).toFixed(2)});
+      --pl-fx-duration:${dur}s;
     `.trim();
   }
 
-  /** Card-only preview — HA does not report live effect mode from the lamp. */
+  /** Card-only preview — uses per-effect map (see ``EFFECT_PREVIEW``). */
   function effectPreview(effectName) {
-    const n = effectName.toLowerCase();
-    if (n.startsWith("static")) {
-      const map = {
-        "static red": [255, 48, 48],
-        "static blue": [48, 120, 255],
-        "static green": [48, 220, 96],
-        "static cyan": [48, 220, 255],
-        "static yellow": [255, 230, 80],
-        "static purple": [180, 96, 255],
-        "static white": [255, 255, 255],
-      };
-      return { fx: "", rgb: map[n] || [255, 255, 255] };
+    if (!effectName) {
+      return { fx: "", rgb: [255, 255, 255], flashFast: false };
     }
+    if (STATIC_EFFECT_RGB[effectName]) {
+      return { fx: "", rgb: STATIC_EFFECT_RGB[effectName], flashFast: false };
+    }
+    const mapped = EFFECT_PREVIEW[effectName];
+    if (mapped) {
+      return {
+        fx: mapped.fx,
+        rgb: mapped.rgb || [255, 200, 120],
+        flashFast: Boolean(mapped.flash),
+      };
+    }
+    const n = effectName.toLowerCase();
     if (n.includes("jump")) {
-      return { fx: n.includes("seven") ? "fx-jump-seven" : "fx-jump-tri", rgb: null };
+      return {
+        fx: n.includes("seven") ? "fx-jump-seven" : "fx-jump-tri",
+        rgb: [255, 200, 120],
+        flashFast: false,
+      };
     }
     if (n.includes("flash")) {
-      let rgb = [255, 255, 255];
-      if (n.includes("red")) rgb = [255, 56, 56];
-      else if (n.includes("green")) rgb = [56, 255, 120];
-      else if (n.includes("blue")) rgb = [56, 140, 255];
-      else if (n.includes("yellow")) rgb = [255, 220, 64];
-      else if (n.includes("cyan")) rgb = [64, 220, 255];
-      else if (n.includes("purple")) rgb = [180, 96, 255];
-      return { fx: "fx-flash", rgb };
+      return {
+        fx: n.includes("seven") ? "fx-jump-seven" : "fx-flash",
+        rgb: [255, 255, 255],
+        flashFast: n.includes("seven"),
+      };
     }
     if (n.includes("gradient")) {
-      let rgb = [255, 255, 255];
-      if (n.includes("red")) rgb = [255, 72, 48];
-      else if (n.includes("green")) rgb = [48, 220, 120];
-      else if (n.includes("blue")) rgb = [48, 140, 255];
-      else if (n.includes("yellow")) rgb = [255, 210, 64];
-      else if (n.includes("cyan")) rgb = [64, 210, 255];
-      else if (n.includes("purple")) rgb = [170, 96, 255];
-      return { fx: "fx-gradient", rgb };
+      if (n.includes("seven")) {
+        return { fx: "fx-jump-seven", rgb: null, flashFast: false };
+      }
+      if (n.includes("tricolor")) {
+        return { fx: "fx-jump-tri", rgb: null, flashFast: false };
+      }
+      if (n.includes("red") && n.includes("green")) {
+        return { fx: "fx-gradient-rg", rgb: null, flashFast: false };
+      }
+      if (n.includes("red") && n.includes("blue")) {
+        return { fx: "fx-gradient-rb", rgb: null, flashFast: false };
+      }
+      if (n.includes("green") && n.includes("blue")) {
+        return { fx: "fx-gradient-gb", rgb: null, flashFast: false };
+      }
+      for (const [key, rgb] of Object.entries(MONO_GRADIENT_RGB)) {
+        if (n.includes(key)) {
+          return { fx: "fx-gradient-mono", rgb, flashFast: false };
+        }
+      }
+      return { fx: "fx-gradient-mono", rgb: [255, 200, 120], flashFast: false };
     }
-    return { fx: "fx-gradient", rgb: [255, 255, 255] };
+    return { fx: "", rgb: [255, 255, 255], flashFast: false };
   }
 
   function resolveGlowPreview(cfg, light, selectedEffect) {
     const on =
       light.isOn && selectedEffect && cfg.show_effect_preview !== false;
     if (!on) {
-      return { rgb: light.rgb, fx: "", label: light.label };
+      return {
+        rgb: light.rgb,
+        fx: "",
+        label: light.label,
+        speed: light.effectSpeed,
+      };
     }
     const preview = effectPreview(selectedEffect);
-    const rgb = preview.rgb || light.rgb;
+    const rgb =
+      preview.rgb ||
+      (preview.fx === "fx-gradient-rg"
+        ? [255, 72, 48]
+        : preview.fx === "fx-gradient-rb"
+          ? [255, 72, 48]
+          : preview.fx === "fx-gradient-gb"
+            ? [48, 220, 120]
+            : light.rgb);
     const short =
       selectedEffect.length > 22
         ? `${selectedEffect.slice(0, 20)}…`
         : selectedEffect;
-    return { rgb, fx: preview.fx, label: short };
+    return {
+      rgb,
+      fx: preview.fx,
+      label: short,
+      speed: light.effectSpeed,
+      flashFast: preview.flashFast,
+    };
   }
 
   function readLight(hass, entityId) {
@@ -207,6 +342,8 @@
         rgb: [255, 255, 255],
         brightness: 255,
         label: "Unavailable",
+        effect: "",
+        effectSpeed: DEFAULT_EFFECT_SPEED,
       };
     }
     const isOn = st.state === "on";
@@ -219,12 +356,23 @@
         : isOn
           ? 255
           : 0;
+    const effectRaw = st.attributes?.[ATTR_IPOOL_EFFECT];
+    const effect = resolveEffectName(hass, entityId, effectRaw);
+    const effectSpeed = Math.max(
+      1,
+      Math.min(
+        10,
+        Number(st.attributes?.[ATTR_IPOOL_EFFECT_SPEED]) || DEFAULT_EFFECT_SPEED
+      )
+    );
     return {
       ok: true,
       isOn,
       rgb,
       brightness,
-      label: isOn ? "On" : "Off",
+      label: isOn ? (effect || "On") : "Off",
+      effect,
+      effectSpeed,
     };
   }
 
@@ -250,6 +398,8 @@
         hass: {},
         config: {},
         _busy: { state: false },
+        _ipoolBusy: { state: false },
+        _pendingLabel: { state: null },
         _selectedEffect: { state: "" },
       };
     }
@@ -288,28 +438,92 @@
       }
     }
 
-    async _callIpool(service, data) {
+    async _callIpool(service, data, pendingLabel = "Sending…") {
       const entity_id = this._entityId();
-      if (!entity_id || this._busy) return;
-      this._busy = true;
+      if (!entity_id || this._ipoolBusy) return;
+      this._ipoolBusy = true;
+      this._pendingLabel = pendingLabel;
       try {
         await this.hass.callService("ipool_light", service, {
           entity_id,
           ...data,
         });
+        if (service === "set_rgb_effect" && data.effect) {
+          writeStoredEffect(entity_id, data.effect);
+        }
+        if (service === "set_effect_speed") {
+          const effect =
+            readLight(this.hass, entity_id).effect ||
+            this._selectedEffect ||
+            readStoredEffect(entity_id);
+          if (effect) writeStoredEffect(entity_id, effect);
+        }
       } finally {
-        this._busy = false;
+        this._ipoolBusy = false;
+        this._pendingLabel = null;
       }
     }
 
     _pickEffect(ev) {
       const effect = ev.target.value;
+      const entityId = this._entityId();
+      this._selectedEffect = effect;
       if (!effect) {
-        this._selectedEffect = "";
+        writeStoredEffect(entityId, "");
         return;
       }
-      this._selectedEffect = effect;
-      this._callIpool("set_rgb_effect", { effect, turn_on_first: true });
+      writeStoredEffect(entityId, effect);
+      const short =
+        effect.length > 18 ? `${effect.slice(0, 16)}…` : effect;
+      this._callIpool(
+        "set_rgb_effect",
+        { effect, turn_on_first: true },
+        `Applying: ${short}`
+      );
+    }
+
+    firstUpdated() {
+      const entityId = this._entityId();
+      if (!entityId || !this.hass) return;
+      const light = readLight(this.hass, entityId);
+      const resolved = light.effect || readStoredEffect(entityId);
+      if (resolved) this._selectedEffect = resolved;
+    }
+
+    updated(changedProperties) {
+      if (!changedProperties.has("hass") || !this.hass) return;
+      const entityId = this._entityId();
+      const light = readLight(this.hass, entityId);
+      const resolved =
+        light.effect || readStoredEffect(entityId) || this._selectedEffect || "";
+      if (resolved !== (this._selectedEffect || "")) {
+        this._selectedEffect = resolved;
+      }
+      if (light.effect) writeStoredEffect(entityId, light.effect);
+    }
+
+    _setEffectSpeed(ev) {
+      const speed = Number(ev.target.value);
+      const entityId = this._entityId();
+      const effect =
+        readLight(this.hass, entityId).effect ||
+        this._selectedEffect ||
+        readStoredEffect(entityId);
+      if (!effect) return;
+      this._callIpool("set_effect_speed", { speed }, "Updating speed…");
+    }
+
+    _selectedEffectForUi(light, entityId) {
+      return (
+        light.effect ||
+        readStoredEffect(entityId) ||
+        this._selectedEffect ||
+        ""
+      );
+    }
+
+    _inEffectMode(light, entityId) {
+      return Boolean(this._selectedEffectForUi(light, entityId));
     }
 
     _togglePower() {
@@ -330,8 +544,10 @@
     }
 
     _pickColor(rgb) {
+      const entityId = this._entityId();
       this._selectedEffect = "";
-      const light = readLight(this.hass, this._entityId());
+      writeStoredEffect(entityId, "");
+      const light = readLight(this.hass, entityId);
       this._call("turn_on", {
         rgb_color: rgb,
         brightness: light.isOn ? light.brightness : 255,
@@ -365,26 +581,32 @@
       }
 
       const light = readLight(this.hass, entityId);
+      const selectedEffect = this._selectedEffectForUi(light, entityId);
+      const inEffect = this._inEffectMode(light, entityId);
       const title =
         cfg.name ||
         this.hass.states[entityId]?.attributes?.friendly_name ||
         "Pool light";
       const ble = bleConnected(this.hass, cfg);
       const art = resolveArtwork(cfg, light);
-      const glowPreview = resolveGlowPreview(cfg, light, this._selectedEffect);
+      const glowPreview = resolveGlowPreview(cfg, light, selectedEffect);
       const [r, g, b] = glowPreview.rgb;
       const glowCss = glowStyle(
         cfg,
         glowPreview.rgb,
         light.brightness,
-        light.isOn && art.showGlow
+        light.isOn && art.showGlow,
+        glowPreview.fx,
+        glowPreview.speed,
+        glowPreview.flashFast
       );
-      const stateLabel = glowPreview.label;
+      const stateLabel = this._pendingLabel || glowPreview.label;
+      const pillPending = Boolean(this._pendingLabel);
 
       return html`
         <ha-card>
           <div
-            class="card ${light.isOn ? "on" : "off"} ${light.ok ? "" : "unavailable"} view-${art.view}"
+            class="card ${light.isOn ? "on" : "off"} ${light.ok ? "" : "unavailable"} view-${art.view} ${pillPending ? "is-sending" : ""}"
           >
             <div class="header">
               <span class="title">${title}</span>
@@ -434,17 +656,23 @@
                     <span class="effect-label">Effect</span>
                     <select
                       class="effect-select"
-                      ?disabled=${!light.ok || this._busy}
-                      .value=${this._selectedEffect || ""}
+                      ?disabled=${!light.ok || this._ipoolBusy}
                       @change=${this._pickEffect}
                     >
-                      <option value="">Solid color (swatches)</option>
+                      <option value="" ?selected=${!selectedEffect}>
+                        Solid color (swatches)
+                      </option>
                       ${EFFECT_OPTIONS.map(
                         (g) => html`
                           <optgroup label=${g.group}>
                             ${g.items.map(
                               (name) => html`
-                                <option value=${name}>${name}</option>
+                                <option
+                                  value=${name}
+                                  ?selected=${selectedEffect === name}
+                                >
+                                  ${name}
+                                </option>
                               `
                             )}
                           </optgroup>
@@ -452,6 +680,24 @@
                       )}
                     </select>
                   </label>
+                  ${selectedEffect
+                    ? html`
+                        <label class="speed-row">
+                          <span class="speed-label"
+                            >Speed (${light.effectSpeed})</span
+                          >
+                          <input
+                            type="range"
+                            min="1"
+                            max="10"
+                            step="1"
+                            .value=${String(light.effectSpeed)}
+                            ?disabled=${!light.ok || this._ipoolBusy}
+                            @change=${this._setEffectSpeed}
+                          />
+                        </label>
+                      `
+                    : ""}
                 `
               : ""}
 
@@ -460,7 +706,9 @@
                 (p) => html`
                   <button
                     type="button"
-                    class="swatch ${rgbEqual(light.rgb, p.rgb) ? "active" : ""}"
+                    class="swatch ${!inEffect && rgbEqual(light.rgb, p.rgb)
+                      ? "active"
+                      : ""}"
                     style="--swatch:${`rgb(${p.rgb.join(",")})`}"
                     title="${p.name}"
                     ?disabled=${!light.ok || this._busy}
@@ -481,10 +729,10 @@
             </div>
 
             <div class="footer">
-              <div class="state-pill">
+              <div class="state-pill ${pillPending ? "is-pending" : ""}">
                 <span
-                  class="dot ${light.isOn ? "on" : ""}"
-                  style=${light.isOn
+                  class="dot ${light.isOn ? "on" : ""} ${pillPending ? "pending" : ""}"
+                  style=${light.isOn && !pillPending
                     ? `background: rgb(${r},${g},${b}); box-shadow: 0 0 10px rgba(${r},${g},${b},0.75)`
                     : ""}
                 ></span>
@@ -634,16 +882,32 @@
           animation: glow-breathe 3s ease-in-out infinite;
         }
         .card.on .lens-glow.fx-jump-tri {
-          animation: fx-jump-tri 1.05s steps(3, end) infinite;
+          animation: fx-jump-tri var(--pl-fx-duration, 1.05s) steps(3, end)
+            infinite;
         }
         .card.on .lens-glow.fx-jump-seven {
-          animation: fx-jump-seven 1.75s steps(7, end) infinite;
+          animation: fx-jump-seven var(--pl-fx-duration, 1.75s) steps(7, end)
+            infinite;
         }
-        .card.on .lens-glow.fx-gradient {
-          animation: fx-gradient-hue 4.5s linear infinite;
+        .card.on .lens-glow.fx-gradient-mono {
+          animation: fx-gradient-mono var(--pl-fx-duration, 2.8s) ease-in-out
+            infinite alternate;
+        }
+        .card.on .lens-glow.fx-gradient-rg {
+          animation: fx-gradient-rg var(--pl-fx-duration, 2.4s) ease-in-out
+            infinite;
+        }
+        .card.on .lens-glow.fx-gradient-rb {
+          animation: fx-gradient-rb var(--pl-fx-duration, 2.4s) ease-in-out
+            infinite;
+        }
+        .card.on .lens-glow.fx-gradient-gb {
+          animation: fx-gradient-gb var(--pl-fx-duration, 2.4s) ease-in-out
+            infinite;
         }
         .card.on .lens-glow.fx-flash {
-          animation: fx-flash-pulse 0.32s ease-in-out infinite alternate;
+          animation: fx-flash-pulse var(--pl-fx-duration, 0.32s) ease-in-out
+            infinite alternate;
         }
         .fixture-wrap.has-glow .lens-glow {
           box-shadow: var(--pl-glow-shadow, none);
@@ -670,6 +934,21 @@
         }
         .effect-select:disabled {
           opacity: 0.45;
+        }
+        .speed-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .speed-label {
+          font-size: 0.8rem;
+          color: var(--secondary-text-color);
+          flex-shrink: 0;
+          width: 5.5rem;
+        }
+        .speed-row input[type="range"] {
+          flex: 1;
+          accent-color: #a78bfa;
         }
         .brightness-row {
           display: flex;
@@ -767,6 +1046,27 @@
         .state-text {
           font-size: 0.9rem;
           color: var(--primary-text-color);
+        }
+        .state-pill.is-pending {
+          box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.35);
+        }
+        .state-pill.is-pending .state-text {
+          color: #7dd3fc;
+        }
+        .dot.pending {
+          background: #38bdf8 !important;
+          box-shadow: 0 0 10px rgba(56, 189, 248, 0.85) !important;
+          animation: pill-pulse 0.9s ease-in-out infinite alternate;
+        }
+        @keyframes pill-pulse {
+          from {
+            opacity: 0.45;
+            transform: scale(0.85);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1.1);
+          }
         }
         .power {
           width: 48px;
@@ -901,12 +1201,77 @@
             );
           }
         }
-        @keyframes fx-gradient-hue {
-          0% {
-            filter: blur(1px) brightness(1.1) hue-rotate(0deg);
+        @keyframes fx-gradient-mono {
+          from {
+            opacity: calc(var(--pl-dim, 0.8) * 0.28);
+            filter: blur(0.5px) brightness(0.7);
           }
+          to {
+            opacity: calc(var(--pl-dim, 0.8) * 1);
+            filter: blur(2px) brightness(1.25);
+          }
+        }
+        @keyframes fx-gradient-rg {
+          0%,
           100% {
-            filter: blur(2px) brightness(1.25) hue-rotate(360deg);
+            background: radial-gradient(
+              circle at 45% 40%,
+              rgba(255, 72, 48, 0.95) 0%,
+              rgba(255, 72, 48, 0.45) 42%,
+              transparent 72%
+            );
+            box-shadow: 0 0 36px rgba(255, 72, 48, 0.75);
+          }
+          50% {
+            background: radial-gradient(
+              circle at 45% 40%,
+              rgba(48, 220, 120, 0.95) 0%,
+              rgba(48, 220, 120, 0.45) 42%,
+              transparent 72%
+            );
+            box-shadow: 0 0 36px rgba(48, 220, 120, 0.75);
+          }
+        }
+        @keyframes fx-gradient-rb {
+          0%,
+          100% {
+            background: radial-gradient(
+              circle at 45% 40%,
+              rgba(255, 72, 48, 0.95) 0%,
+              rgba(255, 72, 48, 0.45) 42%,
+              transparent 72%
+            );
+            box-shadow: 0 0 36px rgba(255, 72, 48, 0.75);
+          }
+          50% {
+            background: radial-gradient(
+              circle at 45% 40%,
+              rgba(48, 140, 255, 0.95) 0%,
+              rgba(48, 140, 255, 0.45) 42%,
+              transparent 72%
+            );
+            box-shadow: 0 0 36px rgba(48, 140, 255, 0.75);
+          }
+        }
+        @keyframes fx-gradient-gb {
+          0%,
+          100% {
+            background: radial-gradient(
+              circle at 45% 40%,
+              rgba(48, 220, 120, 0.95) 0%,
+              rgba(48, 220, 120, 0.45) 42%,
+              transparent 72%
+            );
+            box-shadow: 0 0 36px rgba(48, 220, 120, 0.75);
+          }
+          50% {
+            background: radial-gradient(
+              circle at 45% 40%,
+              rgba(48, 140, 255, 0.95) 0%,
+              rgba(48, 140, 255, 0.45) 42%,
+              transparent 72%
+            );
+            box-shadow: 0 0 36px rgba(48, 140, 255, 0.75);
           }
         }
         @keyframes fx-flash-pulse {
@@ -1031,7 +1396,7 @@
     type: "pool-light-card",
     name: "Pool Light Card",
     description:
-      "RGB pool light card — colors, APK effects, animated lens preview, BLE badge",
+      "RGB pool light card — colors, APK effects, lens preview synced to effect, speed",
     preview: true,
     documentationURL:
       "https://github.com/randrcomputers/ha-pool-light-card#readme",
