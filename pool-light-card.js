@@ -218,6 +218,26 @@
     return `radial-gradient(circle at 45% 40%, rgba(${r},${g},${b},${a0}) 0%, rgba(${r},${g},${b},${a1}) 38%, rgba(${r},${g},${b},${a2}) 62%, transparent 72%)`;
   }
 
+  /**
+   * Card-only: stretch the slow end of the slider so preview 1–3 match the lamp better.
+   * Speed 10 stays the same as the old linear ``/ sp`` mapping.
+   */
+  function fxPreviewPaceDiv(sp) {
+    const s = Math.max(1, Math.min(10, Number(sp) || DEFAULT_EFFECT_SPEED));
+    const wire = (s - 1) / 9;
+    return s * (0.32 + wire * 0.68);
+  }
+
+  function fxDurationSec(fxClass, effectSpeed, flashFast) {
+    const sp = Math.max(1, Math.min(10, Number(effectSpeed) || DEFAULT_EFFECT_SPEED));
+    const base = FX_DURATION_BASE_SEC[fxClass] || 3;
+    const flashMul = flashFast ? 0.55 : 1;
+    return (
+      (base * flashMul * DEFAULT_EFFECT_SPEED) /
+      fxPreviewPaceDiv(sp)
+    ).toFixed(2);
+  }
+
   function glowStyle(config, rgb, brightness, isOn, fxClass, effectSpeed, flashFast) {
     const [r, g, b] = rgb;
     const top = num(config, "glow_top", DEFAULTS.glow_top);
@@ -226,10 +246,7 @@
     const strength = glowStrengthMul(config);
     const lightDim = isOn ? (brightness || 255) / 255 : 0;
     const dim = isOn ? Math.min(1, Math.max(0.2, lightDim * strength)) : 0;
-    const sp = Math.max(1, Math.min(10, Number(effectSpeed) || DEFAULT_EFFECT_SPEED));
-    const base = FX_DURATION_BASE_SEC[fxClass] || 3;
-    const flashMul = flashFast ? 0.55 : 1;
-    const dur = ((base * flashMul * DEFAULT_EFFECT_SPEED) / sp).toFixed(2);
+    const dur = fxDurationSec(fxClass, effectSpeed, flashFast);
     return `
       --pl-glow-top:${top}%;
       --pl-glow-left:${left}%;
@@ -299,7 +316,11 @@
     return { fx: "", rgb: [255, 255, 255], flashFast: false };
   }
 
-  function resolveGlowPreview(cfg, light, selectedEffect) {
+  function resolveGlowPreview(cfg, light, selectedEffect, effectSpeed) {
+    const speed =
+      effectSpeed != null
+        ? Math.max(1, Math.min(10, Number(effectSpeed) || DEFAULT_EFFECT_SPEED))
+        : light.effectSpeed;
     const on =
       light.isOn && selectedEffect && cfg.show_effect_preview !== false;
     if (!on) {
@@ -307,7 +328,7 @@
         rgb: light.rgb,
         fx: "",
         label: light.label,
-        speed: light.effectSpeed,
+        speed,
       };
     }
     const preview = effectPreview(selectedEffect);
@@ -328,7 +349,7 @@
       rgb,
       fx: preview.fx,
       label: short,
-      speed: light.effectSpeed,
+      speed,
       flashFast: preview.flashFast,
     };
   }
@@ -401,6 +422,8 @@
         _ipoolBusy: { state: false },
         _pendingLabel: { state: null },
         _selectedEffect: { state: "" },
+        /** Live lens preview while dragging speed (HA state updates later). */
+        _previewSpeed: { state: null },
       };
     }
 
@@ -491,19 +514,50 @@
     }
 
     updated(changedProperties) {
-      if (!changedProperties.has("hass") || !this.hass) return;
-      const entityId = this._entityId();
-      const light = readLight(this.hass, entityId);
-      const resolved =
-        light.effect || readStoredEffect(entityId) || this._selectedEffect || "";
-      if (resolved !== (this._selectedEffect || "")) {
-        this._selectedEffect = resolved;
+      if (changedProperties.has("hass") && this.hass) {
+        const entityId = this._entityId();
+        const light = readLight(this.hass, entityId);
+        const resolved =
+          light.effect || readStoredEffect(entityId) || this._selectedEffect || "";
+        if (resolved !== (this._selectedEffect || "")) {
+          this._selectedEffect = resolved;
+        }
+        if (light.effect) writeStoredEffect(entityId, light.effect);
+        if (
+          this._previewSpeed != null &&
+          light.effectSpeed === this._previewSpeed
+        ) {
+          this._previewSpeed = null;
+        }
       }
-      if (light.effect) writeStoredEffect(entityId, light.effect);
+      if (this._needGlowRestart) {
+        this._needGlowRestart = false;
+        queueMicrotask(() => this._restartLensGlow());
+      }
+    }
+
+    _effectSpeedForUi(light) {
+      const v = this._previewSpeed ?? light.effectSpeed;
+      return Math.max(1, Math.min(10, Number(v) || DEFAULT_EFFECT_SPEED));
+    }
+
+    _restartLensGlow() {
+      const el = this.shadowRoot?.querySelector(".lens-glow");
+      if (!el || !el.className.includes("fx-")) return;
+      el.style.animation = "none";
+      void el.offsetHeight;
+      el.style.removeProperty("animation");
+    }
+
+    _onEffectSpeedInput(ev) {
+      const speed = Math.max(1, Math.min(10, Number(ev.target.value) || 1));
+      this._previewSpeed = speed;
+      this._needGlowRestart = true;
     }
 
     _setEffectSpeed(ev) {
-      const speed = Number(ev.target.value);
+      const speed = Math.max(1, Math.min(10, Number(ev.target.value) || 1));
+      this._previewSpeed = speed;
       const entityId = this._entityId();
       const effect =
         readLight(this.hass, entityId).effect ||
@@ -589,8 +643,23 @@
         "Pool light";
       const ble = bleConnected(this.hass, cfg);
       const art = resolveArtwork(cfg, light);
-      const glowPreview = resolveGlowPreview(cfg, light, selectedEffect);
+      const uiSpeed = this._effectSpeedForUi(light);
+      const glowPreview = resolveGlowPreview(
+        cfg,
+        light,
+        selectedEffect,
+        uiSpeed
+      );
       const [r, g, b] = glowPreview.rgb;
+      const fxDur = fxDurationSec(
+        glowPreview.fx,
+        glowPreview.speed,
+        glowPreview.flashFast
+      );
+      if (this._glowSpeedSeen !== uiSpeed) {
+        this._glowSpeedSeen = uiSpeed;
+        this._needGlowRestart = true;
+      }
       const glowCss = glowStyle(
         cfg,
         glowPreview.rgb,
@@ -632,6 +701,9 @@
                 ${art.showGlow
                   ? html`<div
                       class="lens-glow ${glowPreview.fx}"
+                      style="${glowPreview.fx
+                        ? `animation-duration:${fxDur}s;`
+                        : ""}"
                       aria-hidden="true"
                     ></div>`
                   : ""}
@@ -683,16 +755,15 @@
                   ${selectedEffect
                     ? html`
                         <label class="speed-row">
-                          <span class="speed-label"
-                            >Speed (${light.effectSpeed})</span
-                          >
+                          <span class="speed-label">Speed (${uiSpeed})</span>
                           <input
                             type="range"
                             min="1"
                             max="10"
                             step="1"
-                            .value=${String(light.effectSpeed)}
+                            .value=${String(uiSpeed)}
                             ?disabled=${!light.ok || this._ipoolBusy}
+                            @input=${this._onEffectSpeedInput}
                             @change=${this._setEffectSpeed}
                           />
                         </label>
