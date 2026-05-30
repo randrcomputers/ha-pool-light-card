@@ -14,7 +14,13 @@ The card can **animate the lens glow** to match the selected effect (seven-color
 
 Requires integration **v0.1.7+** (`ipool_light.set_rgb_effect`, `ipool_light.set_effect_speed`).
 
-![Pool light card preview](media/preview.png)
+
+<img width="480" height="497" alt="image" src="https://github.com/user-attachments/assets/a38331b4-32f3-4b0c-8624-7b8a56127e3a" />
+<img width="495" height="494" alt="image" src="https://github.com/user-attachments/assets/05782add-4f49-42e6-bd16-8ed143a5bbcc" />
+<img width="502" height="488" alt="image" src="https://github.com/user-attachments/assets/530e909f-83be-4ba1-a8bf-e09de4d6c6bd" />
+
+
+
 
 ## Install
 
