@@ -422,6 +422,8 @@
         _ipoolBusy: { state: false },
         _pendingLabel: { state: null },
         _selectedEffect: { state: "" },
+        /** True when UI is on “Solid color (swatches)” — HA may still report ipool_effect. */
+        _solidColorMode: { state: false },
         /** Live lens preview while dragging speed (HA state updates later). */
         _previewSpeed: { state: null },
       };
@@ -492,9 +494,11 @@
       const entityId = this._entityId();
       this._selectedEffect = effect;
       if (!effect) {
+        this._solidColorMode = true;
         writeStoredEffect(entityId, "");
         return;
       }
+      this._solidColorMode = false;
       writeStoredEffect(entityId, effect);
       const short =
         effect.length > 18 ? `${effect.slice(0, 16)}…` : effect;
@@ -509,20 +513,31 @@
       const entityId = this._entityId();
       if (!entityId || !this.hass) return;
       const light = readLight(this.hass, entityId);
-      const resolved = light.effect || readStoredEffect(entityId);
-      if (resolved) this._selectedEffect = resolved;
+      const stored = readStoredEffect(entityId);
+      if (light.effect || stored) {
+        this._solidColorMode = false;
+        this._selectedEffect = light.effect || stored;
+      } else {
+        this._solidColorMode = true;
+        this._selectedEffect = "";
+      }
     }
 
     updated(changedProperties) {
       if (changedProperties.has("hass") && this.hass) {
         const entityId = this._entityId();
         const light = readLight(this.hass, entityId);
-        const resolved =
-          light.effect || readStoredEffect(entityId) || this._selectedEffect || "";
-        if (resolved !== (this._selectedEffect || "")) {
-          this._selectedEffect = resolved;
+        if (!this._solidColorMode) {
+          const resolved =
+            light.effect ||
+            readStoredEffect(entityId) ||
+            this._selectedEffect ||
+            "";
+          if (resolved !== (this._selectedEffect || "")) {
+            this._selectedEffect = resolved;
+          }
+          if (light.effect) writeStoredEffect(entityId, light.effect);
         }
-        if (light.effect) writeStoredEffect(entityId, light.effect);
         if (
           this._previewSpeed != null &&
           light.effectSpeed === this._previewSpeed
@@ -599,6 +614,7 @@
 
     _pickColor(rgb) {
       const entityId = this._entityId();
+      this._solidColorMode = true;
       this._selectedEffect = "";
       writeStoredEffect(entityId, "");
       const light = readLight(this.hass, entityId);
@@ -635,8 +651,11 @@
       }
 
       const light = readLight(this.hass, entityId);
-      const selectedEffect = this._selectedEffectForUi(light, entityId);
-      const inEffect = this._inEffectMode(light, entityId);
+      const solidColorMode = this._solidColorMode;
+      const selectedEffect = solidColorMode
+        ? ""
+        : this._selectedEffectForUi(light, entityId);
+      const inEffect = !solidColorMode && Boolean(selectedEffect);
       const title =
         cfg.name ||
         this.hass.states[entityId]?.attributes?.friendly_name ||
@@ -772,32 +791,36 @@
                 `
               : ""}
 
-            <div class="swatches" role="group" aria-label="Colors">
-              ${PRESETS.map(
-                (p) => html`
-                  <button
-                    type="button"
-                    class="swatch ${!inEffect && rgbEqual(light.rgb, p.rgb)
-                      ? "active"
-                      : ""}"
-                    style="--swatch:${`rgb(${p.rgb.join(",")})`}"
-                    title="${p.name}"
-                    ?disabled=${!light.ok || this._busy}
-                    @click=${() => this._pickColor(p.rgb)}
-                  ></button>
+            ${solidColorMode
+              ? html`
+                  <div class="swatches" role="group" aria-label="Colors">
+                    ${PRESETS.map(
+                      (p) => html`
+                        <button
+                          type="button"
+                          class="swatch ${rgbEqual(light.rgb, p.rgb)
+                            ? "active"
+                            : ""}"
+                          style="--swatch:${`rgb(${p.rgb.join(",")})`}"
+                          title="${p.name}"
+                          ?disabled=${!light.ok || this._busy}
+                          @click=${() => this._pickColor(p.rgb)}
+                        ></button>
+                      `
+                    )}
+                    <label class="swatch custom" title="Custom color">
+                      <input
+                        type="color"
+                        .value=${`#${[r, g, b]
+                          .map((x) => x.toString(16).padStart(2, "0"))
+                          .join("")}`}
+                        ?disabled=${!light.ok || this._busy}
+                        @change=${this._pickCustom}
+                      />
+                    </label>
+                  </div>
                 `
-              )}
-              <label class="swatch custom" title="Custom color">
-                <input
-                  type="color"
-                  .value=${`#${[r, g, b]
-                    .map((x) => x.toString(16).padStart(2, "0"))
-                    .join("")}`}
-                  ?disabled=${!light.ok || this._busy}
-                  @change=${this._pickCustom}
-                />
-              </label>
-            </div>
+              : ""}
 
             <div class="footer">
               <div class="state-pill ${pillPending ? "is-pending" : ""}">
